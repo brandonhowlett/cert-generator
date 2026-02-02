@@ -20,8 +20,8 @@ Lightweight, reproducible local PKI tooling for Linux: generate a root CA, sign 
 Run the interactive generator to create a local root CA and one or more leaf certificates.
 
 ```bash
-./cert-tool.sh         # Interactive CLI: create CA, keys, certs, optional outputs
-./cert-lib.sh --help   # Shared helpers used by the toolset
+./cert-tool.sh --help   # Interactive CLI: create CA, keys, certs, optional outputs
+./cert-lib.sh           # Shared helpers used by the toolset
 ```
 
 ## Features
