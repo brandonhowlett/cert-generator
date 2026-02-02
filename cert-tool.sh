@@ -7,6 +7,82 @@ source "$SCRIPT_DIR/cert-lib.sh"
 require_cmd openssl
 
 # =========================
+# Help function
+# =========================
+
+show_help() {
+  cat <<'EOF'
+cert-generator — Local PKI & Certificate Generation Tool
+
+SYNOPSIS
+  cert-tool.sh [OPTIONS]
+
+DESCRIPTION
+  Interactive or non-interactive certificate generation with optional Kubernetes,
+  Traefik, and SOPS encryption outputs.
+
+OPTIONS
+  Output & Paths
+    --out-dir DIR                      Output directory for artifacts (default: ./certs)
+    -d, --dir DIR                      Alias for --out-dir
+    --root-ca-key FILE                 Existing root CA private key (auto-generated if missing)
+
+  Certificate Subject
+    --cn COMMON_NAME                   Leaf certificate Common Name (default: localhost)
+    --ca-cn NAME                       Root CA Common Name (default: "Local Root CA")
+    --subject-extra ATTRS              Extra subject attributes (e.g., "/O=Org/C=US/ST=State")
+    --san SAN                          Subject Alternative Name (repeatable; e.g., DNS:example.local, IP:192.168.1.1)
+
+  Certificate Options
+    --profile {server|client|both}     Certificate profile/EKU (default: both)
+
+  Optional Outputs
+    --emit-k8s-secret                  Generate Kubernetes TLS Secret YAML
+    --k8s-name NAME                    Secret name (default: local-tls)
+    --k8s-namespace NS                 Secret namespace (default: default)
+    --emit-traefik DIR                 Generate Traefik PEM bundle (fullchain.pem + key.pem)
+    --emit-sops                        Generate SOPS-encrypted siblings (requires sops + AGE keys)
+
+  Trust Store
+    --install-trust {linux|macos|firefox}
+                                       Install root CA to system trust store
+
+  Mode
+    --non-interactive                  Skip interactive prompts; use defaults/provided flags
+    -i                                 Alias for --non-interactive
+
+  Help
+    -h, --help                         Show this help message and exit
+
+EXAMPLES
+  # Interactive mode
+  ./cert-tool.sh
+
+  # Non-interactive: create cert with SANs
+  ./cert-tool.sh --cn "example.local" --san "DNS:example.local" --san "IP:192.168.1.10" --non-interactive
+
+  # Emit Kubernetes secret and SOPS encryption
+  ./cert-tool.sh --emit-k8s-secret --emit-sops --non-interactive
+
+  # Traefik bundle with custom output dir
+  ./cert-tool.sh --emit-traefik ./traefik --out-dir ./artifacts --non-interactive
+
+ENVIRONMENT
+  SOPS_AGE_RECIPIENTS                 AGE recipients for sops encryption (colon-separated)
+  HOME/.config/sops/age/keys.txt      Default location for AGE private keys
+
+SAFETY
+  • Never overwrites existing private keys without confirmation
+  • Plaintext artifacts always generated first; encryption is additive
+  • Fails fast on invalid input or missing dependencies
+
+SEE ALSO
+  README.md for detailed documentation
+  cert-lib.sh for helper functions
+EOF
+}
+
+# =========================
 # Defaults
 # =========================
 
@@ -35,7 +111,7 @@ NON_INTERACTIVE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --out-dir) OUT_DIR="$2"; shift 2 ;;
+    --out-dir|-d) OUT_DIR="$2"; shift 2 ;;
     --root-ca-key) ROOT_CA_KEY="$2"; shift 2 ;;
     --ca-cn) CA_CN="$2"; shift 2 ;;
     --cn) CN="$2"; shift 2 ;;
@@ -48,12 +124,9 @@ while [[ $# -gt 0 ]]; do
     --k8s-namespace) K8S_NS="$2"; shift 2 ;;
     --emit-traefik) EMIT_TRAEFIK=1; TRAEFIK_DIR="$2"; shift 2 ;;
     --emit-sops) EMIT_SOPS=1; shift ;;
-    --non-interactive) NON_INTERACTIVE=1; shift ;;
-    -h|--help)
-      sed -n '1,200p' "$SCRIPT_DIR/README.md"
-      exit 0
-      ;;
-    *) echo "Unknown arg: $1"; exit 1 ;;
+    --non-interactive|-i) NON_INTERACTIVE=1; shift ;;
+    -h|--help) show_help; exit 0 ;;
+    *) echo "ERROR: Unknown argument: $1"; echo "Use -h or --help for usage information"; exit 1 ;;
   esac
 done
 
