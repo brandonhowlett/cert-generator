@@ -1,0 +1,62 @@
+name: cert-generator CI (example)
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-encrypt:
+    name: Generate certificates and encrypt
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssl jq git
+          SOPS_VER=3.8.3
+          curl -sSL https://github.com/ProtonMail/sops/releases/download/v${SOPS_VER}/sops-${SOPS_VER}.linux -o sops && chmod +x sops && sudo mv sops /usr/local/bin/
+          curl -sSL https://github.com/FiloSottile/age/releases/download/v1.0.0/age-v1.0.0-linux-amd64.tar.gz | tar xz
+          sudo mv age/age /usr/local/bin/ || true
+
+      - name: Prepare workspace
+        run: |
+          mkdir -p artifacts
+          chmod +x cert-tool.sh || true
+
+      - name: Generate certificates (example run)
+        run: |
+          chmod +x cert-tool.sh
+          ./cert-tool.sh --out-dir artifacts --cn "ci.example.local" --san "DNS:ci.example.local" --non-interactive
+
+      - name: Encrypt artifacts with sops (AGE recipients via secret)
+        env:
+          SOPS_AGE_RECIPIENTS: ${{ secrets.SOPS_AGE_RECIPIENTS }}
+        run: |
+          if [ -z "$SOPS_AGE_RECIPIENTS" ]; then echo "SOPS_AGE_RECIPIENTS is not set"; exit 1; fi
+          for f in artifacts/*; do
+            [ -f "$f" ] || continue
+            sops -e --age "$SOPS_AGE_RECIPIENTS" "$f" > "$f.sops"
+          done
+
+      - name: Commit encrypted artifacts back to repo
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts/*.sops || true
+          git commit -m "ci: add generated encrypted certs" || echo "no changes to commit"
+          git push || echo "push skipped or failed"
+
+      - name: Done
+        run: echo "Artifacts are in artifacts/ — encrypted siblings created as *.sops"
+
+# NOTE: This file is an example. Review and adapt before running in production:
+# - Set `secrets.SOPS_AGE_RECIPIENTS` to valid AGE recipients.
+# - Ensure `cert-tool.sh` supports non-interactive/batch flags used above.
+# - Consider using a dedicated branch or PR flow rather than pushing to `main`.

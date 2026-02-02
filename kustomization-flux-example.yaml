@@ -1,0 +1,26 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1beta1
+kind: Kustomization
+metadata:
+  name: certs
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: my-repo
+  path: "./certs"
+  prune: true
+  validation: client
+  decryption:
+    provider: sops
+
+# Notes:
+# - Place encrypted certificate artifacts in the repository under the configured `path` (here: ./certs).
+# - Encrypted files should be created with sops/AGE and stored as e.g. local-cert.pem.sops or secret.yaml.sops.yaml.
+# - Flux's decryption provider `sops` will decrypt files when applying them, if the cluster has the SOPS decryption setup configured.
+# - Ensure your cluster has:
+#   - sops-controller running (or equivalent Flux decryption capability)
+#   - AGE keys injected as a Kubernetes secret for decryption
+# - Example cluster setup:
+#   - Secret with AGE private keys: kubectl create secret generic sops-age --from-literal=keys.txt="$(cat ~/.config/sops/age/keys.txt)" -n flux-system
+#   - Flux will use the secret to decrypt on apply
