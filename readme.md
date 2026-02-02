@@ -61,19 +61,28 @@ The tool will detect an existing root CA (if present) and ask whether to reuse i
 - Create with non-interactive flags:
 
 ```bash
-./cert-tool.sh --out-dir ./certs --cn "example.local" --san "DNS:example.local" --san "IP:192.168.1.10"
+./cert-tool.sh \
+  --out-dir ./certs \
+  --cn "example.local" \
+  --san "DNS:example.local" \
+  --san "IP:192.168.1.10"
 ```
 
 - Emit a Kubernetes TLS Secret:
 
 ```bash
-./cert-tool.sh --emit-k8s-secret --k8s-name example-tls --k8s-namespace default
+./cert-tool.sh \
+  --emit-k8s-secret \
+  --k8s-name example-tls \
+  --k8s-namespace default
 ```
 
 - Produce Traefik bundle and encrypt with SOPS:
 
 ```bash
-./cert-tool.sh --emit-traefik ./traefik --emit-sops
+./cert-tool.sh \
+  --emit-traefik ./traefik \
+  --emit-sops
 ```
 
 ## Outputs & Files
