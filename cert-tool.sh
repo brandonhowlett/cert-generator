@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get script directory (works in both bash and zsh)
+SCRIPT_DIR="${0%/*}"
+[[ "$SCRIPT_DIR" == "$0" ]] && SCRIPT_DIR="."
 source "$SCRIPT_DIR/cert-lib.sh"
 
 require_cmd openssl
@@ -136,24 +138,40 @@ done
 
 # Helper: read path with readline support & suggestions
 read_path_input() {
-  local prompt="$1" default="$2" input
+  local prompt="${1:-}" default="${2:-}" input="${2:-}"
   
-  # Use readline (-e) if available, with initial suggestion (-i)
-  # Fallback to regular read if bash < 4.0
-  if (( BASH_VERSINFO[0] >= 4 )); then
-    read -r -e -p "$prompt [$default]: " -i "$default" input 2>/dev/null || \
-      read -rp "$prompt [$default]: " input
+  # Guard against missing parameters
+  [[ -z "$prompt" ]] && prompt="Input"
+  
+  # Use read -e for interactive mode only (with TTY check)
+  if [[ -t 0 ]]; then
+    # Interactive: use readline for editing, history, completion
+    read -e -p "$prompt [$default]: " input || input="$default"
   else
-    read -rp "$prompt [$default]: " input
+    # Non-interactive: prompt to stderr, read from stdin
+    echo -n "$prompt [$default]: " >&2
+    read input || input="$default"
   fi
+  input="${input:-$default}"
   
-  echo "${input:-$default}"
+  echo "$input"
 }
 
 # Helper: read generic input with suggestion
 read_input() {
-  local prompt="$1" default="$2" input
-  read -rp "$prompt [$default]: " input
+  local prompt="${1:-}" default="${2:-}" input="${2:-}"
+  
+  # Guard against missing parameters
+  [[ -z "$prompt" ]] && prompt="Input"
+  
+  # Use read -e for interactive mode only
+  if [[ -t 0 ]]; then
+    read -e -p "$prompt [$default]: " input || input="$default"
+  else
+    # Non-interactive: prompt to stderr, read from stdin
+    echo -n "$prompt [$default]: " >&2
+    read input || input="$default"
+  fi
   echo "${input:-$default}"
 }
 
@@ -164,36 +182,71 @@ if (( NON_INTERACTIVE == 0 )); then
   CN="$(read_input "Leaf Common Name" "$CN")"
 
   if [[ "$PROFILE" == "both" ]]; then
-    read -rp "Profile (server/client/both) [both]: " v
+    if [[ -t 0 ]]; then
+      read -rp "Profile (server/client/both) [both]: " v
+    else
+      echo -n "Profile (server/client/both) [both]: " >&2
+      read v || v=""
+    fi
     PROFILE="${v:-both}"
   fi
 
   if [[ ${#SANS[@]} -eq 0 ]]; then
-    read -rp "Add SANs? [Y/n]: " yn
-    [[ "${yn,,}" != "n" ]] && {
+    if [[ -t 0 ]]; then
+      read -rp "Add SANs? [Y/n]: " yn
+    else
+      echo -n "Add SANs? [Y/n]: " >&2
+      read yn || yn=""
+    fi
+    [[ "$(echo "$yn" | tr '[:upper:]' '[:lower:]')" != "n" ]] && {
       while true; do
-        read -rp "SAN (DNS:x / IP:x, empty=done): " san
+        if [[ -t 0 ]]; then
+          read -rp "SAN (DNS:x / IP:x, empty=done): " san
+        else
+          echo -n "SAN (DNS:x / IP:x, empty=done): " >&2
+          read san || san=""
+        fi
         [[ -z "$san" ]] && break
         SANS+=("$san")
       done
     }
   fi
 
-  [[ -z "$SUBJECT_EXTRA" ]] && read -rp "Extra subject attrs (/O= /OU= /C= ...): " SUBJECT_EXTRA
-  read -rp "Install trust? (linux/macos/firefox/skip) [skip]: " v
+  [[ -z "$SUBJECT_EXTRA" ]] && SUBJECT_EXTRA="$(read_input "Extra subject attrs (/O= /OU= /C= ...)" "")"
+  if [[ -t 0 ]]; then
+    read -rp "Install trust? (linux/macos/firefox/skip) [skip]: " v
+  else
+    echo -n "Install trust? (linux/macos/firefox/skip) [skip]: " >&2
+    read v || v=""
+  fi
   [[ "$v" != "skip" ]] && INSTALL_TRUST="$v"
 
-  read -rp "Emit Kubernetes TLS secret? [y/N]: " v
-  [[ "${v,,}" == "y" ]] && EMIT_K8S=1
+  if [[ -t 0 ]]; then
+    read -rp "Emit Kubernetes TLS secret? [y/N]: " v
+  else
+    echo -n "Emit Kubernetes TLS secret? [y/N]: " >&2
+    read v || v=""
+  fi
+  [[ "$(echo "$v" | tr '[:upper:]' '[:lower:]')" == "y" ]] && EMIT_K8S=1
 
-  read -rp "Emit Traefik bundle? [y/N]: " v
-  [[ "${v,,}" == "y" ]] && {
+  if [[ -t 0 ]]; then
+    read -rp "Emit Traefik bundle? [y/N]: " v
+  else
+    echo -n "Emit Traefik bundle? [y/N]: " >&2
+    read v || v=""
+  fi
+  [[ "$(echo "$v" | tr '[:upper:]' '[:lower:]')" == "y" ]] && {
     TRAEFIK_DIR="$(read_path_input "Traefik output dir" "./traefik")"
     EMIT_TRAEFIK=1
   }
 
-  read -rp "Generate SOPS-encrypted files? [y/N]: " v
-  [[ "${v,,}" == "y" ]] && EMIT_SOPS=1
+  if [[ -t 0 ]]; then
+    read -rp "Generate SOPS-encrypted files? [y/N]: " v
+  else
+    echo -n "Generate SOPS-encrypted files? [y/N]: " >&2
+    read v || v=""
+  fi
+  [[ "$(echo "$v" | tr '[:upper:]' '[:lower:]')" == "y" ]] && EMIT_SOPS=1
 fi
 
 # =========================
