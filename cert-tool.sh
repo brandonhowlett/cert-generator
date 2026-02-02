@@ -134,11 +134,34 @@ done
 # Interactive prompts
 # =========================
 
+# Helper: read path with readline support & suggestions
+read_path_input() {
+  local prompt="$1" default="$2" input
+  
+  # Use readline (-e) if available, with initial suggestion (-i)
+  # Fallback to regular read if bash < 4.0
+  if (( BASH_VERSINFO[0] >= 4 )); then
+    read -r -e -p "$prompt [$default]: " -i "$default" input 2>/dev/null || \
+      read -rp "$prompt [$default]: " input
+  else
+    read -rp "$prompt [$default]: " input
+  fi
+  
+  echo "${input:-$default}"
+}
+
+# Helper: read generic input with suggestion
+read_input() {
+  local prompt="$1" default="$2" input
+  read -rp "$prompt [$default]: " input
+  echo "${input:-$default}"
+}
+
 if (( NON_INTERACTIVE == 0 )); then
-  read -rp "Output directory [$OUT_DIR]: " v && OUT_DIR="${v:-$OUT_DIR}"
-  [[ -z "$ROOT_CA_KEY" ]] && read -rp "Root CA key path (empty=auto): " ROOT_CA_KEY
-  read -rp "CA Common Name [$CA_CN]: " v && CA_CN="${v:-$CA_CN}"
-  read -rp "Leaf Common Name [$CN]: " v && CN="${v:-$CN}"
+  OUT_DIR="$(read_path_input "Output directory" "$OUT_DIR")"
+  [[ -z "$ROOT_CA_KEY" ]] && ROOT_CA_KEY="$(read_input "Root CA key path (empty=auto)" "")"
+  CA_CN="$(read_input "CA Common Name" "$CA_CN")"
+  CN="$(read_input "Leaf Common Name" "$CN")"
 
   if [[ "$PROFILE" == "both" ]]; then
     read -rp "Profile (server/client/both) [both]: " v
@@ -165,7 +188,7 @@ if (( NON_INTERACTIVE == 0 )); then
 
   read -rp "Emit Traefik bundle? [y/N]: " v
   [[ "${v,,}" == "y" ]] && {
-    read -rp "Traefik output dir: " TRAEFIK_DIR
+    TRAEFIK_DIR="$(read_path_input "Traefik output dir" "./traefik")"
     EMIT_TRAEFIK=1
   }
 
