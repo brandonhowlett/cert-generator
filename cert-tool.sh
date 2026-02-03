@@ -281,12 +281,29 @@ CONF="$(mktemp)"
 
 SUBJECT="/CN=$CN${SUBJECT_EXTRA}"
 
-generate_leaf_key "$LEAF_KEY"
-generate_openssl_conf "$CONF" "$SUBJECT" "$PROFILE" "${SANS[@]}"
-generate_csr "$LEAF_KEY" "$CSR" "$CONF"
-sign_cert "$CSR" "$ROOT_CA_CRT" "$ROOT_CA_KEY" "$LEAF_CERT" "$CONF"
+# Only generate leaf cert files if not emitting K8s secret
+# (K8s secret embeds the cert, no need for intermediate files)
+if (( EMIT_K8S == 0 )); then
+  generate_leaf_key "$LEAF_KEY"
+  generate_openssl_conf "$CONF" "$SUBJECT" "$PROFILE" "${SANS[@]}"
+  generate_csr "$LEAF_KEY" "$CSR" "$CONF"
+  sign_cert "$CSR" "$ROOT_CA_CRT" "$ROOT_CA_KEY" "$LEAF_CERT" "$CONF"
 
-rm -f "$CONF"
+  rm -f "$CONF"
+else
+  # For K8s secret, generate in temp files (will be embedded in secret)
+  LEAF_KEY="$(mktemp)"
+  LEAF_CERT="$(mktemp)"
+  CSR="$(mktemp)"
+  CONF="$(mktemp)"
+  
+  generate_leaf_key "$LEAF_KEY"
+  generate_openssl_conf "$CONF" "$SUBJECT" "$PROFILE" "${SANS[@]}"
+  generate_csr "$LEAF_KEY" "$CSR" "$CONF"
+  sign_cert "$CSR" "$ROOT_CA_CRT" "$ROOT_CA_KEY" "$LEAF_CERT" "$CONF"
+  
+  trap "rm -f $LEAF_KEY $LEAF_CERT $CSR $CONF" EXIT
+fi
 
 # =========================
 # Optional outputs
@@ -328,10 +345,14 @@ if (( EMIT_SOPS == 1 )); then
     sops_config_path="$OUT_DIR/.sops.yaml"
   fi
   
-  sops_encrypt_file "$LEAF_KEY" "$OUT_DIR/local.sops.pem" "$sops_config_path" || exit 1
-  sops_encrypt_file "$LEAF_CERT" "$OUT_DIR/local-cert.sops.pem" "$sops_config_path" || exit 1
-  sops_encrypt_file "$ROOT_CA_CRT" "$OUT_DIR/local-ca.sops.crt" "$sops_config_path" || exit 1
+  # Only encrypt individual files if not using K8s secret
+  if (( EMIT_K8S == 0 )); then
+    sops_encrypt_file "$LEAF_KEY" "$OUT_DIR/local.sops.pem" "$sops_config_path" || exit 1
+    sops_encrypt_file "$LEAF_CERT" "$OUT_DIR/local-cert.sops.pem" "$sops_config_path" || exit 1
+    sops_encrypt_file "$ROOT_CA_CRT" "$OUT_DIR/local-ca.sops.crt" "$sops_config_path" || exit 1
+  fi
 
+  # Encrypt K8s secret if emitted
   if (( EMIT_K8S == 1 )); then
     sops_encrypt_yaml \
       "$OUT_DIR/${K8S_NAME}-secret.yaml" \
