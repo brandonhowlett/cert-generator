@@ -44,6 +44,9 @@ OPTIONS
     --k8s-name NAME                    Secret name (default: local-tls)
     --k8s-namespace NS                 Secret namespace (default: default)
     --emit-traefik DIR                 Generate Traefik PEM bundle (fullchain.pem + key.pem)
+    --emit-traefik-k8s-secret          Generate Traefik Kubernetes Secret YAML
+    --traefik-k8s-name NAME            Traefik secret name (default: local-certs)
+    --traefik-k8s-namespace NS         Traefik secret namespace (default: traefik)
     --emit-sops                        Generate SOPS-encrypted siblings (requires sops + AGE keys)
     --sops-config FILE                 Path to .sops.yaml config (uses fallback if not found)
 
@@ -107,6 +110,10 @@ K8S_NS="default"
 EMIT_TRAEFIK=0
 TRAEFIK_DIR=""
 
+EMIT_TRAEFIK_K8S=0
+TRAEFIK_K8S_NAME="local-certs"
+TRAEFIK_K8S_NS="traefik"
+
 EMIT_SOPS=0
 SOPS_CONFIG=""
 NON_INTERACTIVE=0
@@ -130,6 +137,9 @@ while [[ $# -gt 0 ]]; do
     --k8s-name) K8S_NAME="$2"; shift 2 ;;
     --k8s-namespace) K8S_NS="$2"; shift 2 ;;
     --emit-traefik) EMIT_TRAEFIK=1; TRAEFIK_DIR="$2"; shift 2 ;;
+    --emit-traefik-k8s-secret) EMIT_TRAEFIK_K8S=1; shift ;;
+    --traefik-k8s-name) TRAEFIK_K8S_NAME="$2"; shift 2 ;;
+    --traefik-k8s-namespace) TRAEFIK_K8S_NS="$2"; shift 2 ;;
     --emit-sops) EMIT_SOPS=1; shift ;;
     --sops-config) SOPS_CONFIG="$2"; shift 2 ;;
     --non-interactive|-i) NON_INTERACTIVE=1; shift ;;
@@ -281,9 +291,9 @@ CONF="$(mktemp)"
 
 SUBJECT="/CN=$CN${SUBJECT_EXTRA}"
 
-# Only generate leaf cert files if not emitting K8s secret
-# (K8s secret embeds the cert, no need for intermediate files)
-if (( EMIT_K8S == 0 )); then
+# Only generate leaf cert files if not emitting K8s secret or Traefik K8s secret
+# (K8s secrets embed the cert, no need for intermediate files)
+if (( EMIT_K8S == 0 && EMIT_TRAEFIK_K8S == 0 )); then
   generate_leaf_key "$LEAF_KEY"
   generate_openssl_conf "$CONF" "$SUBJECT" "$PROFILE" "${SANS[@]}"
   generate_csr "$LEAF_KEY" "$CSR" "$CONF"
@@ -291,7 +301,7 @@ if (( EMIT_K8S == 0 )); then
 
   rm -f "$CONF"
 else
-  # For K8s secret, generate in temp files (will be embedded in secret)
+  # For K8s secret or Traefik K8s secret, generate in temp files (will be embedded in secret)
   LEAF_KEY="$(mktemp)"
   LEAF_CERT="$(mktemp)"
   CSR="$(mktemp)"
@@ -315,6 +325,10 @@ fi
 
 (( EMIT_TRAEFIK == 1 )) && emit_traefik_bundle \
   "$LEAF_CERT" "$ROOT_CA_CRT" "$LEAF_KEY" "$TRAEFIK_DIR"
+
+(( EMIT_TRAEFIK_K8S == 1 )) && emit_traefik_k8s_secret \
+  "$TRAEFIK_K8S_NAME" "$TRAEFIK_K8S_NS" "$OUT_DIR/${TRAEFIK_K8S_NAME}-secret.yaml" \
+  "$LEAF_CERT" "$LEAF_KEY" "$ROOT_CA_CRT"
 
 if [[ -n "$INSTALL_TRUST" ]]; then
   case "$INSTALL_TRUST" in
@@ -345,8 +359,8 @@ if (( EMIT_SOPS == 1 )); then
     sops_config_path="$OUT_DIR/.sops.yaml"
   fi
   
-  # Only encrypt individual files if not using K8s secret
-  if (( EMIT_K8S == 0 )); then
+  # Only encrypt individual files if not using K8s secret or Traefik K8s secret
+  if (( EMIT_K8S == 0 && EMIT_TRAEFIK_K8S == 0 )); then
     sops_encrypt_file "$LEAF_KEY" "$OUT_DIR/local.sops.pem" "$sops_config_path" || exit 1
     sops_encrypt_file "$LEAF_CERT" "$OUT_DIR/local-cert.sops.pem" "$sops_config_path" || exit 1
     sops_encrypt_file "$ROOT_CA_CRT" "$OUT_DIR/local-ca.sops.crt" "$sops_config_path" || exit 1
@@ -357,6 +371,13 @@ if (( EMIT_SOPS == 1 )); then
     sops_encrypt_yaml \
       "$OUT_DIR/${K8S_NAME}-secret.yaml" \
       "$OUT_DIR/${K8S_NAME}.sops.yaml" "$sops_config_path" || exit 1
+  fi
+
+  # Encrypt Traefik K8s secret if emitted
+  if (( EMIT_TRAEFIK_K8S == 1 )); then
+    sops_encrypt_yaml \
+      "$OUT_DIR/${TRAEFIK_K8S_NAME}-secret.yaml" \
+      "$OUT_DIR/${TRAEFIK_K8S_NAME}.sops.yaml" "$sops_config_path" || exit 1
   fi
   
   echo "✔ SOPS encryption complete; encrypted files written as *.sops.*" >&2

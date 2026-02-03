@@ -177,6 +177,24 @@ emit_traefik_bundle() {
   cp "$key" "$outdir/key.pem"
 }
 
+emit_traefik_k8s_secret() {
+  local name="$1" namespace="$2" out="$3"
+  local crt="$4" key="$5" ca="$6"
+
+  cat > "$out" <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: $name
+  namespace: $namespace
+type: Opaque
+data:
+  local-ca.crt: $(base64 -w0 < "$ca")
+  local-cert.pem: $(base64 -w0 < "$crt")
+  local-key.pem: $(base64 -w0 < "$key")
+EOF
+}
+
 # =========================
 # SOPS helpers
 # =========================
