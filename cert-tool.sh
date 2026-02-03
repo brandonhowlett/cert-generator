@@ -314,16 +314,16 @@ if (( EMIT_SOPS == 1 )); then
     exit 1
   }
   
-  sops_encrypt_file "$LEAF_KEY" "$LEAF_KEY.sops" || exit 1
-  sops_encrypt_file "$LEAF_CERT" "$LEAF_CERT.sops" || exit 1
-  sops_encrypt_file "$ROOT_CA_CRT" "$ROOT_CA_CRT.sops" || exit 1
+  sops_encrypt_file "$LEAF_KEY" "$OUT_DIR/local.sops.pem" || exit 1
+  sops_encrypt_file "$LEAF_CERT" "$OUT_DIR/local-cert.sops.pem" || exit 1
+  sops_encrypt_file "$ROOT_CA_CRT" "$OUT_DIR/local-ca.sops.crt" || exit 1
 
   (( EMIT_K8S == 1 )) && \
     sops_encrypt_yaml \
       "$OUT_DIR/${K8S_NAME}-secret.yaml" \
-      "$OUT_DIR/${K8S_NAME}-secret.yaml.sops.yaml" || exit 1
+      "$OUT_DIR/${K8S_NAME}.sops.yaml" || exit 1
   
-  echo "✔ SOPS encryption complete; encrypted files written as *.sops" >&2
+  echo "✔ SOPS encryption complete; encrypted files written as *.sops.*" >&2
 fi
 
 echo "✔ Certificates generated in $OUT_DIR"

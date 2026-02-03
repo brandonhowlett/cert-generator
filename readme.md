@@ -95,7 +95,7 @@ By default the generator emits plaintext artifacts. Common file names:
 - `local-cert.pem` — Leaf certificate
 - `local-chain.pem` — Leaf + CA chain
 
-When SOPS encryption is enabled, encrypted siblings are written alongside plaintext files using `.sops` suffixes (for example `local-cert.pem.sops`). YAML secrets are written as `secret.yaml` and encrypted as `secret.yaml.sops.yaml`.
+When SOPS encryption is enabled, encrypted siblings are written alongside plaintext files using `.sops.` prefix before the extension (for example `local-cert.sops.pem`). YAML secrets are written as `secret.yaml` and encrypted as `secret.sops.yaml`.
 
 ## SOPS & Flux
 
@@ -118,7 +118,7 @@ keys:
   age:
   - &age_key AGEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 groups:
-  - path_regex: ^.*\.(sops|enc)\.(yml|yaml)$
+  - path_regex: ^.*\.sops\.(pem|crt|yaml|yml)$
     key_groups:
       - age:
           - *age_key

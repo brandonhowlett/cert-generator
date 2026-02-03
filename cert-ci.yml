@@ -41,7 +41,10 @@ jobs:
           if [ -z "$SOPS_AGE_RECIPIENTS" ]; then echo "SOPS_AGE_RECIPIENTS is not set"; exit 1; fi
           for f in artifacts/*; do
             [ -f "$f" ] || continue
-            sops -e --age "$SOPS_AGE_RECIPIENTS" "$f" > "$f.sops"
+            filename=$(basename "$f")
+            ext="${filename##*.}"
+            base="${filename%.*}"
+            sops -e --age "$SOPS_AGE_RECIPIENTS" "$f" > "artifacts/${base}.sops.${ext}"
           done
 
       - name: Commit encrypted artifacts back to repo
@@ -49,12 +52,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add artifacts/*.sops || true
+          git add artifacts/*.sops.* || true
           git commit -m "ci: add generated encrypted certs" || echo "no changes to commit"
           git push || echo "push skipped or failed"
 
       - name: Done
-        run: echo "Artifacts are in artifacts/ — encrypted siblings created as *.sops"
+        run: echo "Artifacts are in artifacts/ — encrypted siblings created as *.sops.*"
 
 # NOTE: This file is an example. Review and adapt before running in production:
 # - Set `secrets.SOPS_AGE_RECIPIENTS` to valid AGE recipients.
