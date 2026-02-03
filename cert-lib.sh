@@ -189,19 +189,35 @@ require_sops() {
 }
 
 sops_encrypt_file() {
-  local in="$1" out="$2"
+  local in="$1" out="$2" config="${3:-}"
   [[ -f "$in" ]] || { echo "ERROR: file not found: $in" >&2; return 1; }
-  sops --encrypt "$in" > "$out" || {
-    echo "ERROR: failed to encrypt $in" >&2
-    return 1
-  }
+  
+  if [[ -n "$config" ]]; then
+    SOPS_CONFIG="$config" sops --encrypt "$in" > "$out" || {
+      echo "ERROR: failed to encrypt $in" >&2
+      return 1
+    }
+  else
+    sops --encrypt "$in" > "$out" || {
+      echo "ERROR: failed to encrypt $in" >&2
+      return 1
+    }
+  fi
 }
 
 sops_encrypt_yaml() {
-  local in="$1" out="$2"
+  local in="$1" out="$2" config="${3:-}"
   [[ -f "$in" ]] || { echo "ERROR: file not found: $in" >&2; return 1; }
-  sops --encrypt --input-type yaml --output-type yaml "$in" > "$out" || {
-    echo "ERROR: failed to encrypt YAML $in" >&2
-    return 1
-  }
+  
+  if [[ -n "$config" ]]; then
+    SOPS_CONFIG="$config" sops --encrypt --input-type yaml --output-type yaml "$in" > "$out" || {
+      echo "ERROR: failed to encrypt YAML $in" >&2
+      return 1
+    }
+  else
+    sops --encrypt --input-type yaml --output-type yaml "$in" > "$out" || {
+      echo "ERROR: failed to encrypt YAML $in" >&2
+      return 1
+    }
+  fi
 }

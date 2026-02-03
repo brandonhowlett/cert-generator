@@ -28,6 +28,7 @@ OPTIONS
     --out-dir DIR                      Output directory for artifacts (default: ./certs)
     -d, --dir DIR                      Alias for --out-dir
     --root-ca-key FILE                 Existing root CA private key (auto-generated if missing)
+    --root-ca-cert FILE                Existing root CA certificate (skips CA cert generation)
 
   Certificate Subject
     --cn COMMON_NAME                   Leaf certificate Common Name (default: localhost)
@@ -44,6 +45,7 @@ OPTIONS
     --k8s-namespace NS                 Secret namespace (default: default)
     --emit-traefik DIR                 Generate Traefik PEM bundle (fullchain.pem + key.pem)
     --emit-sops                        Generate SOPS-encrypted siblings (requires sops + AGE keys)
+    --sops-config FILE                 Path to .sops.yaml config (uses fallback if not found)
 
   Trust Store
     --install-trust {linux|macos|firefox}
@@ -90,6 +92,7 @@ EOF
 
 OUT_DIR="./certs"
 ROOT_CA_KEY=""
+ROOT_CA_CERT=""
 CA_CN="Local Root CA"
 CN="localhost"
 SUBJECT_EXTRA=""
@@ -105,6 +108,7 @@ EMIT_TRAEFIK=0
 TRAEFIK_DIR=""
 
 EMIT_SOPS=0
+SOPS_CONFIG=""
 NON_INTERACTIVE=0
 
 # =========================
@@ -115,6 +119,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --out-dir|-d) OUT_DIR="$2"; shift 2 ;;
     --root-ca-key) ROOT_CA_KEY="$2"; shift 2 ;;
+    --root-ca-cert) ROOT_CA_CERT="$2"; shift 2 ;;
     --ca-cn) CA_CN="$2"; shift 2 ;;
     --cn) CN="$2"; shift 2 ;;
     --subject-extra) SUBJECT_EXTRA="$2"; shift 2 ;;
@@ -126,6 +131,7 @@ while [[ $# -gt 0 ]]; do
     --k8s-namespace) K8S_NS="$2"; shift 2 ;;
     --emit-traefik) EMIT_TRAEFIK=1; TRAEFIK_DIR="$2"; shift 2 ;;
     --emit-sops) EMIT_SOPS=1; shift ;;
+    --sops-config) SOPS_CONFIG="$2"; shift 2 ;;
     --non-interactive|-i) NON_INTERACTIVE=1; shift ;;
     -h|--help) show_help; exit 0 ;;
     *) echo "ERROR: Unknown argument: $1"; echo "Use -h or --help for usage information"; exit 1 ;;
@@ -256,7 +262,7 @@ fi
 ensure_dir "$OUT_DIR"
 
 ROOT_CA_KEY="${ROOT_CA_KEY:-$OUT_DIR/root-ca.key}"
-ROOT_CA_CRT="$OUT_DIR/local-ca.crt"
+ROOT_CA_CRT="${ROOT_CA_CERT:-$OUT_DIR/local-ca.crt}"
 LEAF_KEY="$OUT_DIR/local-key.pem"
 LEAF_CERT="$OUT_DIR/local-cert.pem"
 CSR="$OUT_DIR/local.csr"
@@ -267,7 +273,7 @@ CONF="$(mktemp)"
 # =========================
 
 [[ -f "$ROOT_CA_KEY" ]] || generate_root_key "$ROOT_CA_KEY"
-[[ -f "$ROOT_CA_CRT" ]] || generate_ca_cert "$ROOT_CA_KEY" "$ROOT_CA_CRT" "/CN=$CA_CN"
+[[ -n "$ROOT_CA_CERT" && -f "$ROOT_CA_CERT" ]] || generate_ca_cert "$ROOT_CA_KEY" "$ROOT_CA_CRT" "/CN=$CA_CN"
 
 # =========================
 # Leaf
@@ -314,14 +320,23 @@ if (( EMIT_SOPS == 1 )); then
     exit 1
   }
   
-  sops_encrypt_file "$LEAF_KEY" "$OUT_DIR/local.sops.pem" || exit 1
-  sops_encrypt_file "$LEAF_CERT" "$OUT_DIR/local-cert.sops.pem" || exit 1
-  sops_encrypt_file "$ROOT_CA_CRT" "$OUT_DIR/local-ca.sops.crt" || exit 1
+  # Determine .sops.yaml config file path
+  sops_config_path=""
+  if [[ -n "$SOPS_CONFIG" && -f "$SOPS_CONFIG" ]]; then
+    sops_config_path="$SOPS_CONFIG"
+  elif [[ -f "$OUT_DIR/.sops.yaml" ]]; then
+    sops_config_path="$OUT_DIR/.sops.yaml"
+  fi
+  
+  sops_encrypt_file "$LEAF_KEY" "$OUT_DIR/local.sops.pem" "$sops_config_path" || exit 1
+  sops_encrypt_file "$LEAF_CERT" "$OUT_DIR/local-cert.sops.pem" "$sops_config_path" || exit 1
+  sops_encrypt_file "$ROOT_CA_CRT" "$OUT_DIR/local-ca.sops.crt" "$sops_config_path" || exit 1
 
-  (( EMIT_K8S == 1 )) && \
+  if (( EMIT_K8S == 1 )); then
     sops_encrypt_yaml \
       "$OUT_DIR/${K8S_NAME}-secret.yaml" \
-      "$OUT_DIR/${K8S_NAME}.sops.yaml" || exit 1
+      "$OUT_DIR/${K8S_NAME}.sops.yaml" "$sops_config_path" || exit 1
+  fi
   
   echo "✔ SOPS encryption complete; encrypted files written as *.sops.*" >&2
 fi
