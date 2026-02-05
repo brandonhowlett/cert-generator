@@ -118,6 +118,8 @@ EMIT_SOPS=0
 SOPS_CONFIG=""
 NON_INTERACTIVE=0
 
+USE_EXISTING_CA=0
+
 # =========================
 # Flags
 # =========================
@@ -127,6 +129,7 @@ while [[ $# -gt 0 ]]; do
     --out-dir|-d) OUT_DIR="$2"; shift 2 ;;
     --root-ca-key) ROOT_CA_KEY="$2"; shift 2 ;;
     --root-ca-cert) ROOT_CA_CERT="$2"; shift 2 ;;
+    --use-existing-ca) USE_EXISTING_CA=1; shift ;;
     --ca-cn) CA_CN="$2"; shift 2 ;;
     --cn) CN="$2"; shift 2 ;;
     --subject-extra) SUBJECT_EXTRA="$2"; shift 2 ;;
@@ -190,6 +193,49 @@ read_input() {
   fi
   echo "${input:-$default}"
 }
+
+if (( USE_EXISTING_CA == 1 )); then
+  if [[ -z "$ROOT_CA_CERT" || ! -f "$ROOT_CA_CERT" ]]; then
+    echo "ERROR: --root-ca-cert must point to existing CA certificate file"
+    exit 1
+  fi
+  if [[ -z "$ROOT_CA_KEY" || ! -f "$ROOT_CA_KEY" ]]; then
+    echo "ERROR: --root-ca-key must point to existing CA key file"
+    exit 1
+  fi
+
+  ensure_dir "$OUT_DIR"
+
+  # Copy cert and key to output directory
+  cp "$ROOT_CA_CERT" "$OUT_DIR/ca.crt"
+  cp "$ROOT_CA_KEY" "$OUT_DIR/ca.key"
+
+  echo "Using existing CA certificate: $ROOT_CA_CERT"
+  echo "Using existing CA key: $ROOT_CA_KEY"
+
+  # Generate k8s secret if requested
+  if (( EMIT_K8S == 1 )); then
+    emit_k8s_secret "$K8S_NAME" "$K8S_NS" "$OUT_DIR/${K8S_NAME}-secret.yaml" \
+      "$OUT_DIR/ca.crt" "$OUT_DIR/ca.key" "$OUT_DIR/ca.crt"
+  fi
+
+  # Generate SOPS encryption if requested
+  if (( EMIT_SOPS == 1 )); then
+    require_sops
+    sops_config_path=""
+    if [[ -n "$SOPS_CONFIG" && -f "$SOPS_CONFIG" ]]; then
+      sops_config_path="$SOPS_CONFIG"
+    elif [[ -f "$OUT_DIR/.sops.yaml" ]]; then
+      sops_config_path="$OUT_DIR/.sops.yaml"
+    fi
+    sops_encrypt_yaml \
+      "$OUT_DIR/${K8S_NAME}-secret.yaml" \
+      "$OUT_DIR/${K8S_NAME}.sops.yaml" "$sops_config_path" || exit 1
+  fi
+
+  echo "✔ Done! Outputs in $OUT_DIR"
+  exit 0
+fi
 
 if (( NON_INTERACTIVE == 0 )); then
   OUT_DIR="$(read_path_input "Output directory" "$OUT_DIR")"
